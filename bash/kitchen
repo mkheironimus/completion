@@ -1,0 +1,110 @@
+#
+# bash completion for Test Kitchen (http://kitchen.ci)
+#
+# Version: 20151124
+# Homepage: https://github.com/mkheironimus/completion
+#
+# TODO:
+# - don't complete instance names after "-c" in exec
+#
+# License:
+#
+# Copyright 2015 Michael Heironimus
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+__KITCHEN_CMPL_DIR=''
+__KITCHEN_CMPL_MAIN=''
+__KITCHEN_CMPL_LOCAL=''
+__KITCHEN_CMPL_CLOUD=''
+__KITCHEN_CMPL=''
+
+case "$(uname -s)" in
+    Linux) # GNU coreutils syntax
+        __kitchen_cmpl_stat() { [ -r "$1" ] && stat -L --printf='%Y' "$1" ;}
+        ;;
+    *)     # BSD-ish syntax
+        __kitchen_cmpl_stat() { [ -r "$1" ] && stat -L -n -f '%m' "$1" ;}
+        ;;
+esac
+
+# Lazily cache these because it's slow
+__kitchen_cmpl_names() {
+    if [ -z "${__KITCHEN_CMPL}" ] ; then
+        __KITCHEN_CMPL="$(kitchen list --bare)"
+    fi
+}
+
+# Refresh cached values
+__kitchen_cmpl_cache() {
+    __KITCHEN_CMPL=''
+    __KITCHEN_CMPL_MAIN="$(__kitchen_cmpl_stat .kitchen.yml)"
+    __KITCHEN_CMPL_LOCAL="$(__kitchen_cmpl_stat .kitchen.local.yml)"
+    __KITCHEN_CMPL_CLOUD="$(__kitchen_cmpl_stat .kitchen.cloud.yml)"
+}
+
+__kitchen_cmpl() {
+    # fail fast if there isn't a kitchen config
+    if [ ! -f .kitchen.yml ] ; then
+        return 0
+    fi
+
+    COMPREPLY=()
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    local cmds='console converge create destroy diagnose driver exec help init list login setup test verify version'
+
+    if [ "${COMP_CWORD}" -eq 1 ] ; then
+        COMPREPLY=( $(compgen -W "${cmds}" -- ${cur}) )
+        return 0
+    fi
+
+    if [ "${PWD}" != "${__KITCHEN_CMPL_DIR}" ] ; then
+        __KITCHEN_CMPL_DIR="${PWD}"
+        __kitchen_cmpl_cache
+    elif [ "${__KITCHEN_CMPL_MAIN}" != "$(__kitchen_cmpl_stat .kitchen.yml)" ] ; then
+        __kitchen_cmpl_cache
+    elif [ "${__KITCHEN_CMPL_LOCAL}" != "$(__kitchen_cmpl_stat .kitchen.local.yml)" ] ; then
+        __kitchen_cmpl_cache
+    elif [ "${__KITCHEN_CMPL_CLOUD}" != "$(__kitchen_cmpl_stat .kitchen.cloud.yml)" ] ; then
+        __kitchen_cmpl_cache
+    fi
+
+    case "${COMP_WORDS[1]}" in
+        help)
+            COMPREPLY=( $(compgen -W "${cmds}" -- ${cur}) )
+            ;;
+        converge|create|destroy|diagnose|list|setup|test|verify)
+            __kitchen_cmpl_names
+            COMPREPLY=( $(compgen -W "${__KITCHEN_CMPL} all" -- ${cur}) )
+            ;;
+        login)
+            __kitchen_cmpl_names
+            COMPREPLY=( $(compgen -W "${__KITCHEN_CMPL}" -- ${cur}) )
+            ;;
+        driver)
+            if [ "${COMP_CWORD}" -eq 2 ] ; then
+                COMPREPLY=( $(compgen -W 'create discover help' -- ${cur}) )
+            elif [ "${COMP_CWORD}" -eq 3 -a "${COMP_WORDS[2]}" = 'help' ] ; then
+                COMPREPLY=( $(compgen -W 'create discover' -- ${cur}) )
+            fi
+            ;;
+        exec)
+            __kitchen_cmpl_names
+            COMPREPLY=( $(compgen -W "${__KITCHEN_CMPL} -c" -- ${cur}) )
+            ;;
+    esac
+
+    return 0
+}
+
+complete -F __kitchen_cmpl kitchen
